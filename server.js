@@ -6,60 +6,59 @@ const cors = require('cors');
 
 // -------------------- STRIPE CONFIG --------------------
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
-// Redirect users to the home page after payment success
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173/';
-
-// -------------------- MAIN SERVER SETUP --------------------
-const dotenv = require('dotenv');
-dotenv.config();
-
-// ✅ Import Firebase (loads when server starts)
+// -------------------- FIREBASE --------------------
 require('./config/firebase');
 
-// ✅ Import routes
+// -------------------- ROUTES --------------------
 const contactRoutes = require('./routes/contact');
 const productRoutes = require('./routes/products');
-const authRoutes = require('./routes/auth')
+const authRoutes = require('./routes/auth');
 
 // -------------------- APP INITIALIZATION --------------------
 const app = express();
 
 // ✅ Middleware
-app.use(cors({ origin: ["http://localhost:5173", FRONTEND_URL], credentials: true }));
+app.use(cors({
+  origin: [process.env.FRONTEND_URL, "http://localhost:5173"],
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+}));
 app.use(express.json());
+
+// ✅ Test Route
+app.get("/", (req, res) => {
+  res.send("✅ Backend is running successfully!");
+});
 
 // -------------------- STRIPE ROUTE --------------------
 app.post('/api/create-checkout-session', async (req, res) => {
   try {
     const { amount } = req.body;
 
-    // ✅ Validate amount
     if (!amount || amount <= 0) {
       return res.status(400).json({ error: 'Invalid amount provided' });
-    };
+    }
 
-    // ✅ Create a Checkout session
     const session = await stripe.checkout.sessions.create({
-  payment_method_types: ['card'],
-  line_items: [
-    {
-      price_data: {
-        currency: 'usd',
-        product_data: { name: 'Website Payment' },
-        unit_amount: amount, // amount in cents
-      },
-      quantity: 1,
-    },
-  ],
-  mode: 'payment',
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: { name: 'Website Payment' },
+            unit_amount: amount,
+          },
+          quantity: 1,
+        },
+      ],
+      mode: 'payment',
+      success_url: `${FRONTEND_URL}?status=success`,
+      cancel_url: `${FRONTEND_URL}?status=failed`,
+    });
 
-  // ✅ Redirect URLs
-  success_url: `${FRONTEND_URL}?status=success`, // goes to homepage
-  cancel_url: `${FRONTEND_URL}?status=failed`,  // back to homepage or error
-});
-
-  res.json({ url: session.url });
+    res.json({ url: session.url });
   } catch (error) {
     console.error('Stripe error:', error);
     res.status(500).json({ error: error.message });
@@ -76,7 +75,7 @@ app.use((req, res) => {
   res.status(404).json({ message: 'Route not found' });
 });
 
-// -------------------- CENTRALIZED ERROR HANDLING --------------------
+// -------------------- ERROR HANDLER --------------------
 app.use((err, req, res, next) => {
   console.error('❌ Error stack:', err.stack);
   res.status(err.status || 500).json({
